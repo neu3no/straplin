@@ -1,0 +1,79 @@
+#s!/bin/bash
+
+. conf/general.cfg
+
+# vars
+build=$(uname -m)-pc-linux-gnu
+host=$build
+
+out() {
+	DT=$(date +'[%F %R] ')
+	echo -en "\033[0;34m==>\033[0;31m"
+	echo -en "$DT" >> $LOGFILE
+	echo -en " $1" | tee -a $LOGFILE
+	echo -e "\033[0m" 
+	echo >> $LOGFILE
+}
+
+download() {
+	url=$1
+	proto=${url%:*}
+	pfile=$DLDIR/$(basename $url).part
+	file=$DLDIR/$(basename $url)
+	ok=0
+	[ -f "$file" ] && mv "$file" "$pfile"
+	out "downloading $file"
+	case "$proto" in
+		"http"|"ftp")
+			wget -c -o "$pfile" "$url" && ok=1
+		;;
+		"rsync")
+			rsync --partial --progress  "$url" "$pfile" && ok=1
+		;;
+		*)
+			out "error: unknown protocol '$proto'"
+		;;
+	esac
+
+	if [ "$ok" -eq "1" ]; then
+		out "sucessfully downloaded $url"
+		mv "$pfile" "$file"
+    [[ "$2" != "nounpack" ]] &&	unpack "$file"
+	else
+		out "error: could not download $url to $file"
+	fi
+}
+
+unpack() {
+	file=$1
+	ext=${file##*.}
+	bfile=${file%.*}
+	out "unpacking from $(basename $file) to $(basename $bfile)"
+	case "$ext" in
+		"gz")
+			zcat "$file" >> "$bfile"
+		;;
+		"bz2")
+			bzcat "$file" >> "$bfile"
+		;;
+		"xz")
+			xzcat "$file" >> "$bfile"
+		;;
+		*)
+			out "error: unknown compression '$ext'"
+			exit 1
+		;;
+	esac
+	pushd $SRCDIR >> /dev/null
+	out "extracting $bfile to $(pwd)"
+	tar xf "$bfile"
+	rm "$bfile"
+	popd >> /dev/null
+}
+		
+mktree() {
+	for d in $( set -o posix; set | grep -o "[[:alpha:]]\+DIR"); do
+		eval  DIR=\$$d
+		mkdir -p $DIR
+	done
+}
